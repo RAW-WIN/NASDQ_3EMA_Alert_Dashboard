@@ -1,4 +1,3 @@
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -7,38 +6,12 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from streamlit_autorefresh import st_autorefresh
-import smtplib
-from email.mime.text import MIMEText
-from datetime import datetime
-import streamlit as st
-
-
-def send_test_email():
-    try:
-        msg = MIMEText("✅ Your NASDAQ 3 EMA Alert system is working correctly.")
-        msg["Subject"] = "Test Alert - NASDAQ EMA Dashboard"
-        msg["From"] = sender_email
-        msg["To"] = recipient_email
-
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, recipient_email, msg.as_string())
-        server.quit()
-
-        st.success("✅ Test email sent successfully!")
-
-    except Exception as e:
-        st.error(f"❌ Email failed: {e}")
-
-# Button
-
+from datetime import datetime, timedelta
 
 # ---------------------------------------------------
 # Page Config
 # ---------------------------------------------------
-st.set_page_config(page_title="Stock MA Alert Dashboard", layout="wide")
-
+st.set_page_config(page_title="NASDQ 3EMA Alert Dashboard", layout="wide")
 st.title("📈 24/7 Moving Average Alert Dashboard")
 
 # ---------------------------------------------------
@@ -47,7 +20,7 @@ st.title("📈 24/7 Moving Average Alert Dashboard")
 st_autorefresh(interval=300000, key="auto_refresh")
 
 # ---------------------------------------------------
-# Session State for Duplicate Alert Prevention
+# Session State
 # ---------------------------------------------------
 if "alerted_signals" not in st.session_state:
     st.session_state.alerted_signals = {}
@@ -72,7 +45,18 @@ enable_email = st.sidebar.checkbox("Enable Email Alerts")
 symbols = [s.strip().upper() for s in symbol_input.split(",")]
 
 # ---------------------------------------------------
-# Email Configuration (Cloud + Local Safe Version)
+# Sector Mapping (Editable)
+# ---------------------------------------------------
+sector_map = {
+    "AAPL": "Technology",
+    "MSFT": "Technology",
+    "NVDA": "Technology",
+    "AMZN": "Consumer Discretionary",
+    "TSLA": "Consumer Discretionary"
+}
+
+# ---------------------------------------------------
+# Email Configuration
 # ---------------------------------------------------
 try:
     sender_email = st.secrets["SENDER_EMAIL"]
@@ -84,7 +68,7 @@ except Exception:
     recipient_email = ""
 
 # ---------------------------------------------------
-# Email Function
+# Email Functions
 # ---------------------------------------------------
 def send_email_alert(subject, body):
     try:
@@ -103,8 +87,26 @@ def send_email_alert(subject, body):
     except Exception:
         return False
 
+
+def send_test_email():
+    try:
+        msg = MIMEText("✅ Your NASDAQ 3 EMA Alert system is working correctly.")
+        msg["Subject"] = f"Test Alert - {datetime.now()}"
+        msg["From"] = sender_email
+        msg["To"] = recipient_email
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, recipient_email, msg.as_string())
+        server.quit()
+
+        st.success("✅ Test email sent successfully!")
+    except Exception as e:
+        st.error(f"❌ Email failed: {e}")
+
 # ---------------------------------------------------
-# Fetch & Analyze Stock Data
+# Fetch Stock Data
 # ---------------------------------------------------
 @st.cache_data
 def fetch_stock_data(symbol, period):
@@ -117,18 +119,15 @@ def fetch_stock_data(symbol, period):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    # Moving Averages
     df["MA10"] = df["Close"].rolling(10).mean()
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
 
-    # Buy Signal: MA10 crosses above MA20
     df["Buy_Signal"] = (
         (df["MA10"] > df["MA20"]) &
         (df["MA10"].shift(1) <= df["MA20"].shift(1))
     )
 
-    # Sell Signal: MA50 crosses above MA10
     df["Sell_Signal"] = (
         (df["MA50"] > df["MA10"]) &
         (df["MA50"].shift(1) <= df["MA10"].shift(1))
@@ -145,110 +144,104 @@ def fetch_stock_data(symbol, period):
     }
 
 # ---------------------------------------------------
-# Run Scan Automatically
+# Run Scan
 # ---------------------------------------------------
 results = []
+recent_signals = []
+
+lookback_days = 10
+cutoff_date = datetime.now() - timedelta(days=lookback_days)
+
 for s in symbols:
     result = fetch_stock_data(s, period)
     if result:
         results.append(result)
 
+        df = result["Data"]
+
+        recent = df[
+            (df["Buy_Signal"] | df["Sell_Signal"]) &
+            (df.index >= cutoff_date)
+        ]
+
+        for idx, row in recent.iterrows():
+            signal_type = "BUY" if row["Buy_Signal"] else "SELL"
+            days_ago = (datetime.now() - idx).days
+
+            recent_signals.append({
+                "Ticker": s,
+                "Sector": sector_map.get(s, "Unknown"),
+                "Signal": signal_type,
+                "Signal Date": idx.date(),
+                "Days Ago": days_ago
+            })
+
 # ---------------------------------------------------
-# Display Scan Results
+# Display Results
 # ---------------------------------------------------
 st.subheader("Scan Results")
 
-if not results:
-    st.warning("No valid data returned.")
-else:
+if results:
     df_results = pd.DataFrame(results).drop(columns=["Data"])
     st.dataframe(df_results, use_container_width=True)
+else:
+    st.warning("No valid data returned.")
 
 # ---------------------------------------------------
-# Email Alert Logic (Price > $50 Only)
+# Recent Signal Table with Filter + Sector Grouping
 # ---------------------------------------------------
-if enable_email and sender_email and sender_password and recipient_email:
+st.divider()
+st.subheader("📊 Recent Buy/Sell Signals (Last 10 Days)")
 
-    for r in results:
-        symbol = r["Symbol"]
-        price = r["Last Close"]
-        buy = r["Buy Today"]
-        sell = r["Sell Today"]
+signal_df = pd.DataFrame(recent_signals)
 
-        if price > 50:
+if not signal_df.empty:
 
-            signal_key = f"{symbol}_{buy}_{sell}"
-
-            if signal_key not in st.session_state.alerted_signals:
-
-                if buy:
-                    subject = f"🚀 BUY ALERT: {symbol}"
-                    body = f"""
-Buy Signal Detected!
-
-Stock: {symbol}
-Price: ${price:.2f}
-
-MA10 crossed above MA20.
-                    """
-                    if send_email_alert(subject, body):
-                        st.session_state.alerted_signals[signal_key] = True
-
-                elif sell:
-                    subject = f"🔻 SELL ALERT: {symbol}"
-                    body = f"""
-Sell Signal Detected!
-
-Stock: {symbol}
-Price: ${price:.2f}
-
-MA50 crossed above MA10.
-                    """
-                    if send_email_alert(subject, body):
-                        st.session_state.alerted_signals[signal_key] = True
-
-# ---------------------------------------------------
-# Professional Chart Section
-# ---------------------------------------------------
-if results:
-
-    selected_symbol = st.selectbox(
-        "Select stock to view chart",
-        [r["Symbol"] for r in results]
+    filter_option = st.selectbox(
+        "Filter by Signal Type",
+        ["Both", "BUY", "SELL"],
+        key="signal_filter"
     )
 
-    selected_data = next(r for r in results if r["Symbol"] == selected_symbol)["Data"]
+    if filter_option != "Both":
+        filtered_df = signal_df[signal_df["Signal"] == filter_option]
+    else:
+        filtered_df = signal_df.copy()
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+    # Sector Summary
+    st.markdown("### 📈 Signals by Sector")
 
-    ax.plot(selected_data.index, selected_data["Close"], label="Close", linewidth=2)
-    ax.plot(selected_data.index, selected_data["MA10"], label="MA10 (10-day)", linewidth=1.5)
-    ax.plot(selected_data.index, selected_data["MA20"], label="MA20 (20-day)", linewidth=1.5)
-    ax.plot(selected_data.index, selected_data["MA50"], label="MA50 (50-day)", linewidth=1.5)
+    sector_summary = (
+        filtered_df.groupby(["Sector", "Signal"])
+        .size()
+        .reset_index(name="Count")
+        .sort_values("Count", ascending=False)
+    )
 
-    buy_signals = selected_data[selected_data["Buy_Signal"]]
-    sell_signals = selected_data[selected_data["Sell_Signal"]]
+    st.dataframe(sector_summary, use_container_width=True)
 
-    ax.scatter(buy_signals.index, buy_signals["Close"],
-               marker="^", s=120, label="Buy Signal")
+    # Detailed Table
+    st.markdown("### 📋 Signal Details")
+    filtered_df = filtered_df.sort_values("Signal Date", ascending=False)
+    st.dataframe(filtered_df, use_container_width=True)
 
-    ax.scatter(sell_signals.index, sell_signals["Close"],
-               marker="v", s=120, label="Sell Signal")
+    # Export CSV
+    csv = filtered_df.to_csv(index=False).encode("utf-8")
 
-    ax.set_title(f"{selected_symbol} Price & MA Signals",
-                 fontsize=16, fontweight="bold")
+    st.download_button(
+        "📥 Export to CSV",
+        data=csv,
+        file_name="recent_ema_signals.csv",
+        mime="text/csv",
+        key="export_csv_button"
+    )
 
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.grid(True, linestyle="--", alpha=0.4)
-    ax.legend(loc="upper left")
+else:
+    st.info("No buy or sell signals in the past 10 days.")
 
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-
-
-    st.pyplot(fig)
-
+# ---------------------------------------------------
+# Email Test Section
+# ---------------------------------------------------
 st.divider()
 st.subheader("📧 Email Test")
 
