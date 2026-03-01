@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 # Page Config
 # ---------------------------------------------------
 st.set_page_config(page_title="NASDQ 3EMA Alert Dashboard", layout="wide")
-st.title("📈 24/7 Moving Average Alert Dashboard")
+st.title("📈 NASDQ 3EMA Alert Dashboard")
 
 # ---------------------------------------------------
 # Auto Refresh Every 5 Minutes
@@ -177,9 +177,9 @@ for s in symbols:
             })
 
 # ---------------------------------------------------
-# Display Results
+# Display Scan Results
 # ---------------------------------------------------
-st.subheader("Scan Results")
+st.subheader("📋 Scan Results")
 
 if results:
     df_results = pd.DataFrame(results).drop(columns=["Data"])
@@ -188,7 +188,7 @@ else:
     st.warning("No valid data returned.")
 
 # ---------------------------------------------------
-# Recent Signal Table with Filter + Sector Grouping
+# Recent Signals Section
 # ---------------------------------------------------
 st.divider()
 st.subheader("📊 Recent Buy/Sell Signals (Last 10 Days)")
@@ -208,7 +208,6 @@ if not signal_df.empty:
     else:
         filtered_df = signal_df.copy()
 
-    # Sector Summary
     st.markdown("### 📈 Signals by Sector")
 
     sector_summary = (
@@ -220,12 +219,11 @@ if not signal_df.empty:
 
     st.dataframe(sector_summary, use_container_width=True)
 
-    # Detailed Table
     st.markdown("### 📋 Signal Details")
+
     filtered_df = filtered_df.sort_values("Signal Date", ascending=False)
     st.dataframe(filtered_df, use_container_width=True)
 
-    # Export CSV
     csv = filtered_df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
@@ -240,13 +238,57 @@ else:
     st.info("No buy or sell signals in the past 10 days.")
 
 # ---------------------------------------------------
-# Email Test Section
+# Chart Section
+# ---------------------------------------------------
+if results:
+
+    st.divider()
+    st.subheader("📈 Price Chart with MA Signals")
+
+    selected_symbol = st.selectbox(
+        "Select stock to view chart",
+        [r["Symbol"] for r in results],
+        key="chart_symbol_select"
+    )
+
+    selected_data = next(
+        r for r in results if r["Symbol"] == selected_symbol
+    )["Data"]
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    ax.plot(selected_data.index, selected_data["Close"], label="Close", linewidth=2)
+    ax.plot(selected_data.index, selected_data["MA10"], label="MA10 (10-day)", linewidth=1.5)
+    ax.plot(selected_data.index, selected_data["MA20"], label="MA20 (20-day)", linewidth=1.5)
+    ax.plot(selected_data.index, selected_data["MA50"], label="MA50 (50-day)", linewidth=1.5)
+
+    buy_signals = selected_data[selected_data["Buy_Signal"]]
+    sell_signals = selected_data[selected_data["Sell_Signal"]]
+
+    ax.scatter(buy_signals.index, buy_signals["Close"],
+               marker="^", s=150, label="BUY Signal")
+
+    ax.scatter(sell_signals.index, sell_signals["Close"],
+               marker="v", s=150, label="SELL Signal")
+
+    ax.set_title(f"{selected_symbol} Price & Moving Average Signals",
+                 fontsize=16, fontweight="bold")
+
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price (USD)")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend(loc="upper left")
+
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    st.pyplot(fig)
+
+# ---------------------------------------------------
+# Email Test
 # ---------------------------------------------------
 st.divider()
 st.subheader("📧 Email Test")
 
 if st.button("Send Test Email", key="test_email_button"):
     send_test_email()
-
-
-
