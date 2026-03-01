@@ -253,5 +253,5 @@ if results:
 st.divider()
 st.subheader("📧 Email Test")
 
-if st.button("Send Test Email"):
+if st.button("Send Test Email", key="test_email_button"):
     send_test_email()
