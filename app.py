@@ -32,7 +32,7 @@ def send_test_email():
         st.error(f"❌ Email failed: {e}")
 
 # Button
-if st.button("Send Test Email"):
+if st.button("Send Test Email", key="test_email_button"):
     send_test_email()
 
 # ---------------------------------------------------
@@ -255,3 +255,4 @@ st.subheader("📧 Email Test")
 
 if st.button("Send Test Email", key="test_email_button"):
     send_test_email()
+
