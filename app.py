@@ -32,8 +32,7 @@ def send_test_email():
         st.error(f"❌ Email failed: {e}")
 
 # Button
- st.button("Send Test Email"):
-    send_test_email()
+
 
 # ---------------------------------------------------
 # Page Config
@@ -255,5 +254,6 @@ st.subheader("📧 Email Test")
 
 if st.button("Send Test Email", key="test_email_button"):
     send_test_email()
+
 
 
