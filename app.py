@@ -7,6 +7,33 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from streamlit_autorefresh import st_autorefresh
+import smtplib
+from email.mime.text import MIMEText
+from datetime import datetime
+import streamlit as st
+
+
+def send_test_email():
+    try:
+        msg = MIMEText("✅ Your NASDAQ 3 EMA Alert system is working correctly.")
+        msg["Subject"] = "Test Alert - NASDAQ EMA Dashboard"
+        msg["From"] = sender_email
+        msg["To"] = recipient_email
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, recipient_email, msg.as_string())
+        server.quit()
+
+        st.success("✅ Test email sent successfully!")
+
+    except Exception as e:
+        st.error(f"❌ Email failed: {e}")
+
+# Button
+if st.button("Send Test Email"):
+    send_test_email()
 
 # ---------------------------------------------------
 # Page Config
@@ -220,4 +247,11 @@ if results:
     plt.xticks(rotation=45)
     plt.tight_layout()
 
+
     st.pyplot(fig)
+
+st.divider()
+st.subheader("📧 Email Test")
+
+if st.button("Send Test Email"):
+    send_test_email()
